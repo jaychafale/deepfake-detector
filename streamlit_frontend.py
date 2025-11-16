@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
 from PIL import Image
+import io
 
 # ---------------------------
 # CONFIG
 # ---------------------------
-API_URL = "http://localhost:8000"   # change if deployed
+API_URL = "https://deepfake-detector-vz5v.onrender.com"   # Render backend URL
 
 st.set_page_config(page_title="Deepfake Detection UI", page_icon="🕵️‍♂️", layout="wide")
 st.title("🕵️‍♂️ Deepfake Detection System")
@@ -30,13 +31,15 @@ else:
 if uploaded is not None:
     st.info("✅ File uploaded successfully!")
 
+    # ----- Display preview -----
     if media_type == "Image":
+        image_bytes = uploaded.read()
         st.image(
-            Image.open(uploaded),
+            Image.open(io.BytesIO(image_bytes)),
             caption="Uploaded Image",
-            use_container_width=True  # ✅ FIXED
+            use_container_width=True
         )
-
+        uploaded.seek(0)  # Reset pointer
         endpoint = "/analyze/image"
 
     elif media_type == "Audio":
@@ -52,6 +55,8 @@ if uploaded is not None:
     # ------------------------------------------
     if st.button("Analyze"):
         with st.spinner("Analyzing using FastAPI backend…"):
+
+            # ---- Correct multipart format ----
             files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type)}
 
             try:
