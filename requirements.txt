@@ -3,7 +3,6 @@ uvicorn
 opencv-python
 numpy
 pillow
-mediapipe
 scikit-image
 python-multipart
 streamlit
