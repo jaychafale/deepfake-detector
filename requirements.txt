@@ -6,4 +6,3 @@ pillow
 scikit-image
 python-multipart
 streamlit
-tensorflow==2.12  # if you DO NOT use CNN, remove this
