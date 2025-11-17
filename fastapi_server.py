@@ -77,7 +77,6 @@ async def analyze_image(file: UploadFile = File(...)):
             "type": "image",
             "filename": file.filename,
             "prediction": prediction,
-            "confidence": float(confidence),
             "details": details
         }
 
