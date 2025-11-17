@@ -6,7 +6,7 @@ import io
 # ---------------------------
 # CONFIG
 # ---------------------------
-API_URL = "http://98.93.45.43:8000"   # Render backend URL
+API_URL = "http://44.212.28.25:8000"   # Render backend URL
 
 st.set_page_config(page_title="Deepfake Detection UI", page_icon="🕵️‍♂️", layout="wide")
 st.title("🕵️‍♂️ Deepfake Detection System")
