@@ -4,14 +4,13 @@ from fastapi.responses import JSONResponse
 from PIL import Image
 import numpy as np
 import io
-import tempfile
 import cv2
 
-# Import your detectors
+# Import detectors
 from deepfake_detector import DeepfakeDetector
 from audio_detector import AudioDeepfakeDetector
 from video_detector import VideoDeepfakeDetector
-from utils import validate_image   # ✅ removed preprocess_image import (no longer used)
+from utils import validate_image
 
 # FastAPI App
 app = FastAPI(
@@ -20,7 +19,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS - allow any frontend to access
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,9 +33,8 @@ image_detector = DeepfakeDetector()
 audio_detector = AudioDeepfakeDetector()
 video_detector = VideoDeepfakeDetector()
 
-
 # -------------------------------
-# ✅ ROOT
+# ROOT
 # -------------------------------
 @app.get("/")
 def root():
@@ -50,9 +48,8 @@ def root():
         }
     }
 
-
 # -------------------------------
-# ✅ IMAGE DEEPFAKE DETECTION (FIXED)
+# IMAGE DEEPFAKE DETECTION
 # -------------------------------
 @app.post("/analyze/image")
 async def analyze_image(file: UploadFile = File(...)):
@@ -61,16 +58,16 @@ async def analyze_image(file: UploadFile = File(...)):
         content = await file.read()
         image = Image.open(io.BytesIO(content)).convert("RGB")
 
-        # Validate image
+        # Validate input
         if not validate_image(image):
             raise HTTPException(status_code=400, detail="Invalid or corrupted image")
 
-        # ✅ FIX: Use ORIGINAL SIZE (no resize, no preprocess_image)
+        # Prepare input
         img = np.asarray(image, dtype=np.float32) / 255.0
-        img = np.expand_dims(img, axis=0)  # keep batch format
+        img = np.expand_dims(img, axis=0)
 
         # Run detection
-        prediction, confidence = image_detector.predict(img)
+        prediction, _ = image_detector.predict(img)
         details = image_detector.get_analysis_details(img)
 
         return {
@@ -83,16 +80,14 @@ async def analyze_image(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image analysis error: {str(e)}")
 
-
 # -------------------------------
-# ✅ AUDIO DEEPFAKE DETECTION
+# AUDIO DEEPFAKE DETECTION (NO CONFIDENCE)
 # -------------------------------
 @app.post("/analyze/audio")
 async def analyze_audio(file: UploadFile = File(...)):
     try:
         audio_bytes = await file.read()
 
-        # Your AudioDeepfakeDetector expects .read() method
         class TempFile:
             def __init__(self, data):
                 self.data = data
@@ -101,22 +96,20 @@ async def analyze_audio(file: UploadFile = File(...)):
 
         temp_audio = TempFile(audio_bytes)
 
-        prediction, confidence, details = audio_detector.analyze_audio(temp_audio)
+        prediction, _, details = audio_detector.analyze_audio(temp_audio)
 
         return {
             "type": "audio",
             "filename": file.filename,
             "prediction": prediction,
-            "confidence": float(confidence),
             "details": details
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audio analysis error: {str(e)}")
 
-
 # -------------------------------
-# ✅ VIDEO DEEPFAKE DETECTION
+# VIDEO DEEPFAKE DETECTION (NO CONFIDENCE)
 # -------------------------------
 @app.post("/analyze/video")
 async def analyze_video(file: UploadFile = File(...)):
@@ -131,13 +124,12 @@ async def analyze_video(file: UploadFile = File(...)):
 
         temp_video = TempVideo(video_bytes)
 
-        prediction, confidence, details = video_detector.analyze_video(temp_video)
+        prediction, _, details = video_detector.analyze_video(temp_video)
 
         return {
             "type": "video",
             "filename": file.filename,
             "prediction": prediction,
-            "confidence": float(confidence),
             "details": details
         }
 
