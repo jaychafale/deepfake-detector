@@ -54,7 +54,7 @@ class DeepfakeDetector:
 
             label = "REAL" if prob_real >= 0.5 else "DEEPFAKE"
             confidence = prob_real * 100 if label == "REAL" else (1 - prob_real) * 100
-            return label, float(confidence)
+            return label, None
 
         return self._predict_cv(arr)
 
@@ -150,8 +150,8 @@ class DeepfakeDetector:
         score = max(0, min(1, score))
 
         if score > 0.5:
-            return "REAL", score * 100
-        return "DEEPFAKE", (1 - score) * 100
+            return "REAL", None
+        return "DEEPFAKE", None
 
     # -------------------------------------------------------------------------
     # UTILS
