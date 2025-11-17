@@ -17,36 +17,37 @@ from PIL import Image
 class DeepfakeDetector:
     """
     Deepfake detector with:
-    - TRUE MesoInception / Meso4 TensorFlow architecture (matching your .h5 files)
-    - Fallback classical CV heuristics if TF unavailable or fails
+    - TRUE MesoInception-4 architecture (compatible with your .h5 files)
+    - Fallback classical CV heuristics if TF unavailable
     """
 
     def __init__(self, model_path="models/MesoInception_DF.h5"):
-        self.input_size = (256, 256)
+        self.input_size = (224, 224)
         self.tf_model = None
         self.tf_model_loaded = False
         self.tf_model_path = model_path
 
-        # Load TF model if possible
         if TF_AVAILABLE and os.path.exists(self.tf_model_path):
             try:
-                model = self._build_mesoinception(input_shape=(256, 256, 3))
+                print(f"[INFO] Loading TensorFlow model: {self.tf_model_path}")
+                model = self._build_mesonet(input_shape=(224, 224, 3))
                 model.load_weights(self.tf_model_path)
                 self.tf_model = model
                 self.tf_model_loaded = True
+                print("[INFO] TensorFlow model loaded successfully.")
             except Exception as e:
-                print("TF model load failed → fallback active:", str(e))
+                print("TF model load failed → fallback CV mode activated:", str(e))
                 self.tf_model_loaded = False
 
     # -------------------------------------------------------------------------
-    # Public
+    # PUBLIC API
     # -------------------------------------------------------------------------
     def predict(self, image):
         arr = self._ensure_numpy_image(image)
 
         if self.tf_model_loaded:
             img = cv2.resize(arr, self.input_size)
-            x = np.expand_dims(img, axis=0).astype(np.float32)
+            x = np.expand_dims(img.astype(np.float32), axis=0)
 
             preds = self.tf_model.predict(x, verbose=0)
             prob_real = float(preds[0][0])
@@ -55,7 +56,6 @@ class DeepfakeDetector:
             confidence = prob_real * 100 if label == "REAL" else (1 - prob_real) * 100
             return label, float(confidence)
 
-        # fallback mode
         return self._predict_cv(arr)
 
     def get_analysis_details(self, image):
@@ -63,7 +63,7 @@ class DeepfakeDetector:
 
         if self.tf_model_loaded:
             img = cv2.resize(arr, self.input_size)
-            x = np.expand_dims(img, axis=0).astype(np.float32)
+            x = np.expand_dims(img.astype(np.float32), axis=0)
             prob_real = float(self.tf_model.predict(x, verbose=0)[0][0])
 
             return {
@@ -82,40 +82,62 @@ class DeepfakeDetector:
         }
 
     # -------------------------------------------------------------------------
-    # TRUE MesoInception4 architecture — EXACT match for your .h5 weights
+    # TRUE MesoInception-4 architecture
     # -------------------------------------------------------------------------
-    def _inception_module(self, x, filters):
-        conv1 = layers.Conv2D(filters, (1, 1), padding="same", activation="relu")(x)
-        conv3 = layers.Conv2D(filters, (3, 3), padding="same", activation="relu")(x)
-        conv5 = layers.Conv2D(filters, (5, 5), padding="same", activation="relu")(x)
-        out = layers.Concatenate()([conv1, conv3, conv5])
-        return out
+    def _build_mesonet(self, input_shape=(224, 224, 3)):
+        """
+        Official MesoInception-4 architecture 
+        Compatible with MesoInception_F2F.h5 and MesoInception_DF.h5
+        """
+        if not TF_AVAILABLE:
+            raise RuntimeError("TensorFlow not available")
 
-    def _build_mesoinception(self, input_shape=(256, 256, 3)):
-        inp = layers.Input(shape=input_shape)
+        from tensorflow.keras.layers import (
+            Input, Conv2D, BatchNormalization, MaxPooling2D,
+            AveragePooling2D, Flatten, Dense, concatenate
+        )
+        from tensorflow.keras.models import Model
 
-        x = self._inception_module(inp, 8)
-        x = layers.MaxPool2D(pool_size=(2, 2), padding="same")(x)
+        inp = Input(shape=input_shape)
 
-        x = self._inception_module(x, 16)
-        x = layers.MaxPool2D(pool_size=(2, 2), padding="same")(x)
+        # Block 1
+        x = Conv2D(8, (3, 3), padding="same", activation="relu")(inp)
+        x = BatchNormalization()(x)
+        x = MaxPooling2D((2, 2))(x)
 
-        x = layers.Conv2D(16, (3, 3), padding="same", activation="relu")(x)
-        x = layers.Conv2D(16, (3, 3), padding="same", activation="relu")(x)
-        x = layers.MaxPool2D(pool_size=(2, 2), padding="same")(x)
+        # Block 2 (Inception)
+        tower_0 = Conv2D(16, (1, 1), padding="same", activation="relu")(x)
 
-        x = layers.Flatten()(x)
-        x = layers.Dropout(0.5)(x)
-        x = layers.Dense(16, activation="relu")(x)
-        x = layers.Dropout(0.5)(x)
+        tower_1 = Conv2D(16, (1, 1), padding="same", activation="relu")(x)
+        tower_1 = Conv2D(16, (3, 3), padding="same", activation="relu")(tower_1)
 
-        out = layers.Dense(1, activation="sigmoid")(x)
+        tower_2 = Conv2D(16, (1, 1), padding="same", activation="relu")(x)
+        tower_2 = Conv2D(16, (5, 5), padding="same", activation="relu")(tower_2)
 
-        model = models.Model(inputs=inp, outputs=out)
+        x = concatenate([tower_0, tower_1, tower_2])
+        x = BatchNormalization()(x)
+        x = MaxPooling2D((2, 2))(x)
+
+        # Block 3
+        x = Conv2D(32, (3, 3), padding="same", activation="relu")(x)
+        x = BatchNormalization()(x)
+        x = MaxPooling2D((2, 2))(x)
+
+        # Block 4
+        x = Conv2D(32, (3, 3), padding="same", activation="relu")(x)
+        x = BatchNormalization()(x)
+        x = AveragePooling2D((4, 4))(x)
+
+        # Dense
+        x = Flatten()(x)
+        x = Dense(16, activation="relu")(x)
+        out = Dense(1, activation="sigmoid")(x)
+
+        model = Model(inputs=inp, outputs=out)
         return model
 
     # -------------------------------------------------------------------------
-    # Classical CV fallback methods
+    # CV FALLBACK
     # -------------------------------------------------------------------------
     def _predict_cv(self, image):
         facial = self._analyze_facial_consistency(image)
@@ -132,16 +154,16 @@ class DeepfakeDetector:
         return "DEEPFAKE", (1 - score) * 100
 
     # -------------------------------------------------------------------------
-    # Utility functions
+    # UTILS
     # -------------------------------------------------------------------------
     def _ensure_numpy_image(self, img):
         if isinstance(img, Image.Image):
-            img = np.array(img.convert("RGB")) / 255.0
-        else:
-            img = np.array(img).astype(np.float32)
-            if img.max() > 1:
-                img /= 255.0
-        return img
+            return np.array(img.convert("RGB"), dtype=np.float32) / 255.0
+
+        arr = np.array(img).astype(np.float32)
+        if arr.max() > 1:
+            arr /= 255.0
+        return arr
 
     def _analyze_facial_consistency(self, image):
         gray = cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
@@ -151,9 +173,9 @@ class DeepfakeDetector:
 
     def _analyze_edges(self, image):
         gray = cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
-        edges = cv2.Canny(gray, 100, 200)
-        density = edges.mean()
-        return 0.8 if 0.02 < density < 0.15 else 0.5
+        e = cv2.Canny(gray, 100, 200)
+        d = e.mean()
+        return 0.8 if 0.02 < d < 0.15 else 0.5
 
     def _analyze_texture(self, image):
         std = np.std((image * 255).astype(np.uint8))
